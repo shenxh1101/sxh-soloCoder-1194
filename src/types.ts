@@ -9,11 +9,6 @@ export interface Ingredient {
   maxStock: number
 }
 
-export interface SandwichLayer {
-  ingredientId: string
-  order: number
-}
-
 export interface PackedSandwich {
   id: string
   name: string
@@ -23,6 +18,7 @@ export interface PackedSandwich {
   rating: number
   createdAt: string
   note: string
+  favorite: boolean
 }
 
 export interface Recipe {
@@ -32,4 +28,23 @@ export interface Recipe {
   ingredientIds: string[]
   totalCalories: number
   totalCost: number
+}
+
+export interface CustomerOrder {
+  customerName: string
+  taste: string
+  minBudget: number
+  maxBudget: number
+  minCalories: number
+  maxCalories: number
+  generatedAt: number
+}
+
+export interface OrderEvaluation {
+  totalScore: number
+  orderScore: number
+  budgetScore: number
+  calorieScore: number
+  tasteScore: number
+  comment: string
 }

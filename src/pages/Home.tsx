@@ -4,6 +4,7 @@ import ControlBar from '../components/ControlBar'
 import RecipePanel from '../components/RecipePanel'
 import HistoryPanel from '../components/HistoryPanel'
 import LayerList from '../components/LayerList'
+import OrderPanel from '../components/OrderPanel'
 
 export default function Home() {
   return (
@@ -47,6 +48,9 @@ export default function Home() {
           </div>
 
           <div className="col-span-3 flex flex-col gap-4">
+            <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-4 border border-amber-100 shadow-sm">
+              <OrderPanel />
+            </div>
             <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-4 border border-amber-100 shadow-sm">
               <HistoryPanel />
             </div>

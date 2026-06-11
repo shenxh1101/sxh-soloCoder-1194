@@ -8,6 +8,7 @@ export default function RecipePanel() {
   const ingredients = useSandwichStore((s) => s.ingredients)
   const restockForRecipe = useSandwichStore((s) => s.restockForRecipe)
   const [selectedRecipe, setSelectedRecipe] = useState<string | null>(null)
+  const [stockPending, setStockPending] = useState(false)
 
   const getIngredient = (id: string) => ingredients.find((i) => i.id === id)
 
@@ -39,13 +40,22 @@ export default function RecipePanel() {
   }
 
   const handleApply = (recipe: typeof RECIPES[0]) => {
-    if (!canApplyRecipe(recipe)) return
-    applyRecipe(recipe.ingredientIds)
-    setSelectedRecipe(null)
+    const success = applyRecipe(recipe.ingredientIds)
+    if (success) {
+      setSelectedRecipe(null)
+      setStockPending(false)
+    } else {
+      setStockPending(true)
+    }
   }
 
-  const handleRestock = (recipe: typeof RECIPES[0]) => {
+  const handleRestockAndApply = (recipe: typeof RECIPES[0]) => {
     restockForRecipe(recipe.ingredientIds)
+    const success = applyRecipe(recipe.ingredientIds)
+    if (success) {
+      setSelectedRecipe(null)
+      setStockPending(false)
+    }
   }
 
   const getAssemblySteps = (recipe: typeof RECIPES[0]) => {
@@ -175,24 +185,38 @@ export default function RecipePanel() {
             </div>
           </div>
 
-          <div className="flex gap-2">
-            {!canApplyRecipe(selected) && (
-              <button
-                onClick={() => handleRestock(selected)}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 transition-all duration-200 font-semibold text-sm border border-blue-200"
-              >
-                <ShoppingCart className="w-4 h-4" />
-                一键补货
-              </button>
+          <div className="flex flex-col gap-2">
+            {stockPending && (
+              <div className="p-2 rounded-xl bg-orange-50 border border-orange-200">
+                <p className="text-xs text-orange-700 font-medium mb-1.5">库存不足，需要补货：</p>
+                <div className="flex flex-wrap gap-1">
+                  {getMissingIngredients(selected).map((m) => (
+                    <span key={m.id} className="text-xs px-1.5 py-0.5 rounded-full bg-white border border-orange-200 text-orange-600">
+                      {m.emoji} {m.name} {m.current}/{m.required}
+                    </span>
+                  ))}
+                </div>
+              </div>
             )}
-            <button
-              onClick={() => handleApply(selected)}
-              disabled={!canApplyRecipe(selected)}
-              className="flex-[2] flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 transition-all duration-200 font-bold text-sm shadow-lg shadow-amber-500/25 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
-            >
-              <Zap className="w-4 h-4" />
-              一键生成
-            </button>
+            <div className="flex gap-2">
+              {(stockPending || !canApplyRecipe(selected)) && (
+                <button
+                  onClick={() => handleRestockAndApply(selected)}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 transition-all duration-200 font-semibold text-sm border border-blue-200"
+                >
+                  <ShoppingCart className="w-4 h-4" />
+                  补货并生成
+                </button>
+              )}
+              <button
+                onClick={() => handleApply(selected)}
+                disabled={!canApplyRecipe(selected) && !stockPending}
+                className="flex-[2] flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 transition-all duration-200 font-bold text-sm shadow-lg shadow-amber-500/25 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
+              >
+                <Zap className="w-4 h-4" />
+                一键生成
+              </button>
+            </div>
           </div>
         </div>
       )}
