@@ -22,16 +22,9 @@ function validateSandwich(layers: string[]): string | null {
   if (layers[layers.length - 1] !== 'bread') return '三明治顶部需要面包封顶！请在顶部添加面包。'
   if (layers.length < 3) return '三明治至少需要3层配料（面包+馅料+面包）。'
 
-  const pattyIndices: number[] = []
-  layers.forEach((id, i) => {
-    if (id === 'patty') pattyIndices.push(i)
-  })
-
-  for (const idx of pattyIndices) {
-    if (idx === layers.length - 1) continue
-    const above = layers.slice(idx + 1).filter((id) => id !== 'bread')
-    if (above.length > 0) {
-      return '肉饼放在最上层会更合适，建议将肉饼移到顶部位置。'
+  for (let i = 0; i < layers.length; i++) {
+    if (layers[i] === 'patty' && i === layers.length - 1) {
+      return '肉饼不适合放在三明治最顶层！请用面包封顶，或在肉饼上方添加酱料/面包。'
     }
   }
 
@@ -56,11 +49,16 @@ interface SandwichStore {
 
   addIngredient: (id: string) => void
   removeLayer: (index: number) => void
+  reorderLayers: (fromIndex: number, toIndex: number) => void
+  autoFixBread: () => void
   resetCurrent: () => void
   packSandwich: () => void
   rateSandwich: (id: string, rating: number) => void
+  updateNote: (id: string, note: string) => void
   resetInventory: () => void
   applyRecipe: (ingredientIds: string[]) => void
+  copyFromHistory: (id: string) => void
+  restockForRecipe: (ingredientIds: string[]) => void
 }
 
 export const useSandwichStore = create<SandwichStore>((set, get) => ({
@@ -150,6 +148,7 @@ export const useSandwichStore = create<SandwichStore>((set, get) => ({
         totalCost,
         rating: 0,
         createdAt: new Date().toLocaleString('zh-CN'),
+        note: '',
       }
 
       const newHistory = [packed, ...state.history]
@@ -206,5 +205,115 @@ export const useSandwichStore = create<SandwichStore>((set, get) => ({
     })
     saveToStorage('sandwich_inventory', newIngredients)
     saveToStorage('sandwich_current', ingredientIds)
+  },
+
+  reorderLayers: (fromIndex: number, toIndex: number) => {
+    const { currentLayers } = get()
+    if (fromIndex === toIndex) return
+    if (fromIndex < 0 || fromIndex >= currentLayers.length) return
+    if (toIndex < 0 || toIndex >= currentLayers.length) return
+
+    const newLayers = [...currentLayers]
+    const [moved] = newLayers.splice(fromIndex, 1)
+    newLayers.splice(toIndex, 0, moved)
+    const error = validateSandwich(newLayers)
+
+    set({ currentLayers: newLayers, validationError: error })
+    saveToStorage('sandwich_current', newLayers)
+  },
+
+  autoFixBread: () => {
+    const { currentLayers } = get()
+    if (currentLayers.length < 2) return
+
+    const newLayers = [...currentLayers]
+    const breadIndices: number[] = []
+    newLayers.forEach((id, i) => {
+      if (id === 'bread') breadIndices.push(i)
+    })
+
+    if (breadIndices.length >= 2) {
+      const firstBread = newLayers.splice(breadIndices[0], 1)[0]
+      newLayers.unshift(firstBread)
+
+      const lastBreadIdx = newLayers.lastIndexOf('bread')
+      if (lastBreadIdx !== newLayers.length - 1) {
+        const lastBread = newLayers.splice(lastBreadIdx, 1)[0]
+        newLayers.push(lastBread)
+      }
+    }
+
+    const pattyIndices: number[] = []
+    newLayers.forEach((id, i) => {
+      if (id === 'patty') pattyIndices.push(i)
+    })
+
+    for (const idx of pattyIndices.reverse()) {
+      if (idx === newLayers.length - 1) {
+        const patty = newLayers.splice(idx, 1)[0]
+        const insertPos = newLayers.length - 1
+        newLayers.splice(insertPos, 0, patty)
+      }
+    }
+
+    const error = validateSandwich(newLayers)
+    set({ currentLayers: newLayers, validationError: error })
+    saveToStorage('sandwich_current', newLayers)
+  },
+
+  updateNote: (id: string, note: string) => {
+    const { history } = get()
+    const newHistory = history.map((h) => (h.id === id ? { ...h, note } : h))
+    set({ history: newHistory })
+    saveToStorage('sandwich_history', newHistory)
+  },
+
+  copyFromHistory: (id: string) => {
+    const { history, currentLayers, ingredients } = get()
+    const source = history.find((h) => h.id === id)
+    if (!source) return
+
+    let newIngredients = ingredients.map((i) => {
+      const used = currentLayers.filter((l) => l === i.id).length
+      return { ...i, stock: i.stock + used }
+    })
+
+    for (const layerId of source.layers) {
+      const ing = newIngredients.find((i) => i.id === layerId)
+      if (!ing || ing.stock <= 0) return
+      newIngredients = newIngredients.map((i) =>
+        i.id === layerId ? { ...i, stock: i.stock - 1 } : i
+      )
+    }
+
+    const error = validateSandwich(source.layers)
+    set({
+      ingredients: newIngredients,
+      currentLayers: [...source.layers],
+      validationError: error,
+    })
+    saveToStorage('sandwich_inventory', newIngredients)
+    saveToStorage('sandwich_current', [...source.layers])
+  },
+
+  restockForRecipe: (ingredientIds: string[]) => {
+    const { ingredients } = get()
+    const needed: Record<string, number> = {}
+    ingredientIds.forEach((id) => {
+      needed[id] = (needed[id] || 0) + 1
+    })
+
+    const newIngredients = ingredients.map((i) => {
+      if (needed[i.id]) {
+        const required = needed[i.id]
+        if (i.stock < required) {
+          return { ...i, stock: required }
+        }
+      }
+      return i
+    })
+
+    set({ ingredients: newIngredients })
+    saveToStorage('sandwich_inventory', newIngredients)
   },
 }))

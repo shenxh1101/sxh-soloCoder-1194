@@ -22,6 +22,7 @@ export interface PackedSandwich {
   totalCost: number
   rating: number
   createdAt: string
+  note: string
 }
 
 export interface Recipe {
