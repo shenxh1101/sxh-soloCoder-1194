@@ -1,12 +1,13 @@
 import { useSandwichStore } from '../store'
 import { RECIPES } from '../data'
-import { Zap, X, ShoppingCart, ChevronRight, AlertTriangle } from 'lucide-react'
+import { Zap, X, ShoppingCart, ChevronRight, AlertTriangle, ListPlus } from 'lucide-react'
 import { useState } from 'react'
 
 export default function RecipePanel() {
   const applyRecipe = useSandwichStore((s) => s.applyRecipe)
   const ingredients = useSandwichStore((s) => s.ingredients)
   const restockForLayers = useSandwichStore((s) => s.restockForLayers)
+  const addToQueue = useSandwichStore((s) => s.addToQueue)
   const [selectedRecipe, setSelectedRecipe] = useState<string | null>(null)
   const [stockPending, setStockPending] = useState(false)
 
@@ -199,6 +200,20 @@ export default function RecipePanel() {
               </div>
             )}
             <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  addToQueue({
+                    id: Date.now().toString(),
+                    name: selected.name,
+                    layers: selected.ingredientIds,
+                    source: 'recipe',
+                  })
+                }}
+                className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-purple-50 text-purple-700 hover:bg-purple-100 transition-all duration-200 font-semibold text-sm border border-purple-200"
+              >
+                <ListPlus className="w-4 h-4" />
+                加入队列
+              </button>
               {(stockPending || !canApplyRecipe(selected)) && (
                 <button
                   onClick={() => handleRestockAndApply(selected)}

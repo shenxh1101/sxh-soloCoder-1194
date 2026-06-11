@@ -58,3 +58,22 @@ export interface TasteProfile {
   lowCal: number
   classic: number
 }
+
+export interface QueueItem {
+  id: string
+  name: string
+  layers: string[]
+  source: 'order' | 'recipe' | 'history'
+}
+
+export interface FilterPreset {
+  id: string
+  name: string
+  ratingMin: number
+  ratingMax: number
+  calorieMin: string
+  calorieMax: string
+  costMin: string
+  costMax: string
+  favoriteOnly: boolean
+}
