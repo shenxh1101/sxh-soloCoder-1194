@@ -1,8 +1,6 @@
 import { create } from 'zustand'
-import type { Ingredient, PackedSandwich, CustomerOrder, OrderEvaluation } from './types'
+import type { Ingredient, PackedSandwich, CustomerOrder, OrderEvaluation, TasteProfile } from './types'
 import { DEFAULT_INGREDIENTS } from './data'
-
-const LOW_STOCK_THRESHOLD = 3
 
 function loadFromStorage<T>(key: string, fallback: T): T {
   try {
@@ -16,6 +14,19 @@ function saveToStorage(key: string, value: unknown) {
   try {
     localStorage.setItem(key, JSON.stringify(value))
   } catch { /* ignore */ }
+}
+
+function fillDefaults(ingredients: Ingredient[]): Ingredient[] {
+  return ingredients.map((ing) => {
+    const def = DEFAULT_INGREDIENTS.find((d) => d.id === ing.id)
+    if (!def) return ing
+    return {
+      ...ing,
+      lowStockThreshold: ing.lowStockThreshold ?? def.lowStockThreshold,
+      restockTarget: ing.restockTarget ?? def.restockTarget,
+      autoRestock: ing.autoRestock ?? def.autoRestock,
+    }
+  })
 }
 
 function validateSandwich(layers: string[]): string | null {
@@ -178,6 +189,23 @@ function evaluateOrder(layers: string[], order: CustomerOrder, ingredients: Ingr
   }
 }
 
+function computeTasteProfile(layers: string[], ingredients: Ingredient[]): TasteProfile {
+  const totalCalories = layers.reduce((sum, id) => {
+    const ing = ingredients.find((i) => i.id === id)
+    return sum + (ing?.calories ?? 0)
+  }, 0)
+  const pattyCount = layers.filter((id) => id === 'patty').length
+  const veggieCount = layers.filter((id) => id === 'lettuce' || id === 'tomato').length
+  const hasBread = layers[0] === 'bread' && layers[layers.length - 1] === 'bread'
+
+  return {
+    meat: Math.min(pattyCount / 2, 1),
+    fresh: Math.min(veggieCount / 3, 1),
+    lowCal: Math.max(0, Math.min((500 - totalCalories) / 500, 1)),
+    classic: hasBread && pattyCount === 1 && veggieCount >= 2 ? 1 : hasBread ? 0.4 : 0.2,
+  }
+}
+
 function getMissingStock(layers: string[], ingredients: Ingredient[]): { id: string; name: string; emoji: string; need: number; have: number }[] {
   const counts: Record<string, number> = {}
   layers.forEach((id) => { counts[id] = (counts[id] || 0) + 1 })
@@ -189,6 +217,10 @@ function getMissingStock(layers: string[], ingredients: Ingredient[]): { id: str
     }
   })
   return missing
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
 }
 
 interface SandwichStore {
@@ -212,20 +244,24 @@ interface SandwichStore {
   resetInventory: () => void
   applyRecipe: (ingredientIds: string[]) => boolean
   copyFromHistory: (id: string) => boolean
-  restockForRecipe: (ingredientIds: string[]) => void
+  restockForLayers: (ingredientIds: string[]) => void
   restockAll: () => void
   generateOrder: () => void
   dismissOrder: () => void
   dismissEvaluation: () => void
   getMissingForLayers: (layers: string[]) => { id: string; name: string; emoji: string; need: number; have: number }[]
   isLowStock: (id: string) => boolean
+  computeTasteProfile: () => TasteProfile
+  updateIngredientConfig: (id: string, config: { lowStockThreshold?: number; restockTarget?: number; autoRestock?: boolean }) => void
 }
 
 const savedLayers = loadFromStorage<string[]>('sandwich_current', [])
 const initValidationError = validateSandwich(savedLayers)
+const savedIngredients = loadFromStorage<Ingredient[]>('sandwich_inventory', DEFAULT_INGREDIENTS)
+const migratedIngredients = fillDefaults(savedIngredients)
 
 export const useSandwichStore = create<SandwichStore>((set, get) => ({
-  ingredients: loadFromStorage<Ingredient[]>('sandwich_inventory', DEFAULT_INGREDIENTS),
+  ingredients: migratedIngredients,
   currentLayers: savedLayers,
   history: loadFromStorage<PackedSandwich[]>('sandwich_history', []),
   validationError: initValidationError,
@@ -259,9 +295,11 @@ export const useSandwichStore = create<SandwichStore>((set, get) => ({
 
     const removedId = currentLayers[index]
     const newLayers = currentLayers.filter((_, i) => i !== index)
-    const newIngredients = ingredients.map((i) =>
-      i.id === removedId ? { ...i, stock: i.stock + 1 } : i
-    )
+    const newIngredients = ingredients.map((i) => {
+      if (i.id !== removedId) return i
+      const newStock = clamp(i.stock + 1, 0, i.maxStock)
+      return { ...i, stock: newStock }
+    })
     const error = validateSandwich(newLayers)
 
     set({
@@ -277,7 +315,7 @@ export const useSandwichStore = create<SandwichStore>((set, get) => ({
     const { ingredients, currentLayers } = get()
     const newIngredients = ingredients.map((i) => {
       const used = currentLayers.filter((l) => l === i.id).length
-      return { ...i, stock: i.stock + used }
+      return { ...i, stock: clamp(i.stock + used, 0, i.maxStock) }
     })
     set({
       ingredients: newIngredients,
@@ -346,10 +384,14 @@ export const useSandwichStore = create<SandwichStore>((set, get) => ({
 
   resetInventory: () => {
     const { currentLayers } = get()
-    const newIngredients = DEFAULT_INGREDIENTS.map((def) => ({
-      ...def,
-      stock: def.maxStock,
-    }))
+    const usageCounts: Record<string, number> = {}
+    currentLayers.forEach((id) => { usageCounts[id] = (usageCounts[id] || 0) + 1 })
+
+    const newIngredients = DEFAULT_INGREDIENTS.map((def) => {
+      const used = usageCounts[def.id] || 0
+      return { ...def, stock: clamp(def.maxStock - used, 0, def.maxStock) }
+    })
+
     const error = validateSandwich(currentLayers)
     set({ ingredients: newIngredients, validationError: error })
     saveToStorage('sandwich_inventory', newIngredients)
@@ -357,14 +399,30 @@ export const useSandwichStore = create<SandwichStore>((set, get) => ({
 
   applyRecipe: (ingredientIds: string[]): boolean => {
     const { currentLayers } = get()
-
     let newIngredients = get().ingredients.map((i) => {
       const used = currentLayers.filter((l) => l === i.id).length
-      return { ...i, stock: i.stock + used }
+      return { ...i, stock: clamp(i.stock + used, 0, i.maxStock) }
     })
 
     const missing = getMissingStock(ingredientIds, newIngredients)
-    if (missing.length > 0) return false
+    if (missing.length > 0) {
+      const allAutoRestock = missing.every((m) => {
+        const ing = newIngredients.find((i) => i.id === m.id)
+        return ing?.autoRestock ?? false
+      })
+      if (allAutoRestock) {
+        for (const m of missing) {
+          const ing = newIngredients.find((i) => i.id === m.id)
+          if (ing && ing.stock < m.need) {
+            newIngredients = newIngredients.map((i) =>
+              i.id === m.id ? { ...i, stock: clamp(i.restockTarget, m.need, i.maxStock) } : i
+            )
+          }
+        }
+      } else {
+        return false
+      }
+    }
 
     for (const id of ingredientIds) {
       newIngredients = newIngredients.map((i) =>
@@ -427,8 +485,7 @@ export const useSandwichStore = create<SandwichStore>((set, get) => ({
     for (const idx of pattyIndices.reverse()) {
       if (idx === newLayers.length - 1) {
         const patty = newLayers.splice(idx, 1)[0]
-        const insertPos = newLayers.length - 1
-        newLayers.splice(insertPos, 0, patty)
+        newLayers.splice(newLayers.length - 1, 0, patty)
       }
     }
 
@@ -458,11 +515,28 @@ export const useSandwichStore = create<SandwichStore>((set, get) => ({
 
     let newIngredients = ingredients.map((i) => {
       const used = currentLayers.filter((l) => l === i.id).length
-      return { ...i, stock: i.stock + used }
+      return { ...i, stock: clamp(i.stock + used, 0, i.maxStock) }
     })
 
     const missing = getMissingStock(source.layers, newIngredients)
-    if (missing.length > 0) return false
+    if (missing.length > 0) {
+      const allAutoRestock = missing.every((m) => {
+        const ing = newIngredients.find((i) => i.id === m.id)
+        return ing?.autoRestock ?? false
+      })
+      if (allAutoRestock) {
+        for (const m of missing) {
+          const ing = newIngredients.find((i) => i.id === m.id)
+          if (ing && ing.stock < m.need) {
+            newIngredients = newIngredients.map((i) =>
+              i.id === m.id ? { ...i, stock: clamp(i.restockTarget, m.need, i.maxStock) } : i
+            )
+          }
+        }
+      } else {
+        return false
+      }
+    }
 
     for (const layerId of source.layers) {
       newIngredients = newIngredients.map((i) =>
@@ -481,7 +555,7 @@ export const useSandwichStore = create<SandwichStore>((set, get) => ({
     return true
   },
 
-  restockForRecipe: (ingredientIds: string[]) => {
+  restockForLayers: (ingredientIds: string[]) => {
     const { ingredients } = get()
     const needed: Record<string, number> = {}
     ingredientIds.forEach((id) => {
@@ -489,11 +563,9 @@ export const useSandwichStore = create<SandwichStore>((set, get) => ({
     })
 
     const newIngredients = ingredients.map((i) => {
-      if (needed[i.id]) {
-        const required = needed[i.id]
-        if (i.stock < required) {
-          return { ...i, stock: required }
-        }
+      if (needed[i.id] && i.stock < needed[i.id]) {
+        const target = clamp(i.restockTarget, needed[i.id], i.maxStock)
+        return { ...i, stock: target }
       }
       return i
     })
@@ -503,10 +575,13 @@ export const useSandwichStore = create<SandwichStore>((set, get) => ({
   },
 
   restockAll: () => {
-    const newIngredients = DEFAULT_INGREDIENTS.map((def) => ({
-      ...def,
-      stock: def.maxStock,
-    }))
+    const newIngredients = DEFAULT_INGREDIENTS.map((def) => {
+      const current = get().ingredients.find((i) => i.id === def.id)
+      const currentLayers = get().currentLayers
+      const used = currentLayers.filter((l) => l === def.id).length
+      const available = (current?.stock ?? 0) + used
+      return { ...def, stock: clamp(def.restockTarget, available, def.maxStock) }
+    })
     set({ ingredients: newIngredients })
     saveToStorage('sandwich_inventory', newIngredients)
   },
@@ -530,6 +605,21 @@ export const useSandwichStore = create<SandwichStore>((set, get) => ({
 
   isLowStock: (id: string) => {
     const ing = get().ingredients.find((i) => i.id === id)
-    return ing ? ing.stock <= LOW_STOCK_THRESHOLD && ing.stock > 0 : false
+    if (!ing) return false
+    return ing.stock <= ing.lowStockThreshold && ing.stock > 0
+  },
+
+  computeTasteProfile: () => {
+    const { currentLayers, ingredients } = get()
+    return computeTasteProfile(currentLayers, ingredients)
+  },
+
+  updateIngredientConfig: (id: string, config) => {
+    const { ingredients } = get()
+    const newIngredients = ingredients.map((i) =>
+      i.id === id ? { ...i, ...config } : i
+    )
+    set({ ingredients: newIngredients })
+    saveToStorage('sandwich_inventory', newIngredients)
   },
 }))

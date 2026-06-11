@@ -7,6 +7,9 @@ export interface Ingredient {
   cost: number
   stock: number
   maxStock: number
+  lowStockThreshold: number
+  restockTarget: number
+  autoRestock: boolean
 }
 
 export interface PackedSandwich {
@@ -47,4 +50,11 @@ export interface OrderEvaluation {
   calorieScore: number
   tasteScore: number
   comment: string
+}
+
+export interface TasteProfile {
+  meat: number
+  fresh: number
+  lowCal: number
+  classic: number
 }

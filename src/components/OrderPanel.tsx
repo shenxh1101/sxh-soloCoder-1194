@@ -1,5 +1,6 @@
 import { useSandwichStore } from '../store'
-import { ClipboardList, X, Target, TrendingUp } from 'lucide-react'
+import { ClipboardList, X, Target, TrendingUp, Gauge } from 'lucide-react'
+import { useMemo } from 'react'
 
 export default function OrderPanel() {
   const currentOrder = useSandwichStore((s) => s.currentOrder)
@@ -7,6 +8,7 @@ export default function OrderPanel() {
   const dismissOrder = useSandwichStore((s) => s.dismissOrder)
   const currentLayers = useSandwichStore((s) => s.currentLayers)
   const ingredients = useSandwichStore((s) => s.ingredients)
+  const computeTasteProfile = useSandwichStore((s) => s.computeTasteProfile)
 
   const totalCalories = currentLayers.reduce((sum, id) => {
     const ing = ingredients.find((i) => i.id === id)
@@ -16,6 +18,8 @@ export default function OrderPanel() {
     const ing = ingredients.find((i) => i.id === id)
     return sum + (ing?.cost ?? 0)
   }, 0)
+
+  const tasteProfile = useMemo(() => computeTasteProfile(), [currentLayers, ingredients, computeTasteProfile])
 
   if (!currentOrder) {
     return (
@@ -35,6 +39,18 @@ export default function OrderPanel() {
   const calorieInRange = totalCalories >= currentOrder.minCalories && totalCalories <= currentOrder.maxCalories
   const costInRange = totalCost >= currentOrder.minBudget && totalCost <= currentOrder.maxBudget
   const matchCount = [calorieInRange, costInRange].filter(Boolean).length
+
+  const isMeatOrder = currentOrder.taste.includes('肉')
+  const isFreshOrder = currentOrder.taste.includes('蔬菜') || currentOrder.taste.includes('清爽')
+  const isLowCalOrder = currentOrder.taste.includes('低热量')
+  const isClassicOrder = currentOrder.taste.includes('经典')
+
+  const tasteDimensions = [
+    { label: '肉香', key: 'meat' as const, color: '#ef4444', active: isMeatOrder },
+    { label: '清爽', key: 'fresh' as const, color: '#22c55e', active: isFreshOrder },
+    { label: '低热量', key: 'lowCal' as const, color: '#3b82f6', active: isLowCalOrder },
+    { label: '经典', key: 'classic' as const, color: '#a855f7', active: isClassicOrder },
+  ]
 
   return (
     <div className="bg-white rounded-2xl border-2 border-blue-200 shadow-sm">
@@ -85,9 +101,7 @@ export default function OrderPanel() {
                     style={{ width: `${Math.min((totalCost / currentOrder.maxBudget) * 100, 100)}%` }}
                   />
                 </div>
-                <span className="text-[10px] text-stone-400 mt-0.5 block">
-                  当前 ¥{totalCost.toFixed(1)}
-                </span>
+                <span className="text-[10px] text-stone-400 mt-0.5 block">当前 ¥{totalCost.toFixed(1)}</span>
               </div>
             )}
           </div>
@@ -114,13 +128,52 @@ export default function OrderPanel() {
                     style={{ width: `${Math.min((totalCalories / currentOrder.maxCalories) * 100, 100)}%` }}
                   />
                 </div>
-                <span className="text-[10px] text-stone-400 mt-0.5 block">
-                  当前 {totalCalories}千卡
-                </span>
+                <span className="text-[10px] text-stone-400 mt-0.5 block">当前 {totalCalories}千卡</span>
               </div>
             )}
           </div>
         </div>
+
+        {currentLayers.length > 0 && (
+          <div className="mb-3 p-2.5 rounded-xl bg-stone-50 border border-stone-100">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Gauge className="w-3.5 h-3.5 text-purple-500" />
+              <span className="text-xs font-semibold text-stone-600">口味实时匹配</span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {tasteDimensions.map((dim) => {
+                const value = tasteProfile[dim.key]
+                const isTarget = dim.active
+                const fillColor = isTarget
+                  ? dim.color
+                  : value > 0.5
+                  ? '#d4d4d4'
+                  : '#e5e5e5'
+                return (
+                  <div key={dim.key} className="flex items-center gap-2">
+                    <span className={`text-[10px] w-10 font-medium ${isTarget ? 'text-stone-700' : 'text-stone-400'}`}>
+                      {dim.label}
+                      {isTarget && <span className="text-purple-500 ml-0.5">★</span>}
+                    </span>
+                    <div className="flex-1 h-2 bg-stone-200 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-300"
+                        style={{
+                          width: `${value * 100}%`,
+                          backgroundColor: fillColor,
+                          opacity: isTarget ? 1 : 0.5,
+                        }}
+                      />
+                    </div>
+                    <span className="text-[10px] text-stone-400 w-7 text-right tabular-nums">
+                      {Math.round(value * 100)}%
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="flex items-center gap-2">
           <Target className="w-3.5 h-3.5 text-blue-500" />

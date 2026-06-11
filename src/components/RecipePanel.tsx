@@ -6,7 +6,7 @@ import { useState } from 'react'
 export default function RecipePanel() {
   const applyRecipe = useSandwichStore((s) => s.applyRecipe)
   const ingredients = useSandwichStore((s) => s.ingredients)
-  const restockForRecipe = useSandwichStore((s) => s.restockForRecipe)
+  const restockForLayers = useSandwichStore((s) => s.restockForLayers)
   const [selectedRecipe, setSelectedRecipe] = useState<string | null>(null)
   const [stockPending, setStockPending] = useState(false)
 
@@ -50,7 +50,7 @@ export default function RecipePanel() {
   }
 
   const handleRestockAndApply = (recipe: typeof RECIPES[0]) => {
-    restockForRecipe(recipe.ingredientIds)
+    restockForLayers(recipe.ingredientIds)
     const success = applyRecipe(recipe.ingredientIds)
     if (success) {
       setSelectedRecipe(null)

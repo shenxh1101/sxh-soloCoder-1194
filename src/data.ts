@@ -1,11 +1,11 @@
 import type { Ingredient, Recipe } from './types'
 
 export const DEFAULT_INGREDIENTS: Ingredient[] = [
-  { id: 'bread', name: '面包', emoji: '🍞', color: '#DEB887', calories: 80, cost: 2.0, stock: 10, maxStock: 10 },
-  { id: 'lettuce', name: '生菜', emoji: '🥬', color: '#81C784', calories: 5, cost: 0.5, stock: 10, maxStock: 10 },
-  { id: 'tomato', name: '番茄', emoji: '🍅', color: '#EF5350', calories: 15, cost: 1.0, stock: 10, maxStock: 10 },
-  { id: 'patty', name: '肉饼', emoji: '🥩', color: '#8D6E63', calories: 250, cost: 5.0, stock: 10, maxStock: 10 },
-  { id: 'sauce', name: '酱料', emoji: '🧴', color: '#FFCC80', calories: 30, cost: 1.5, stock: 10, maxStock: 10 },
+  { id: 'bread', name: '面包', emoji: '🍞', color: '#DEB887', calories: 80, cost: 2.0, stock: 10, maxStock: 10, lowStockThreshold: 3, restockTarget: 10, autoRestock: true },
+  { id: 'lettuce', name: '生菜', emoji: '🥬', color: '#81C784', calories: 5, cost: 0.5, stock: 10, maxStock: 10, lowStockThreshold: 3, restockTarget: 10, autoRestock: true },
+  { id: 'tomato', name: '番茄', emoji: '🍅', color: '#EF5350', calories: 15, cost: 1.0, stock: 10, maxStock: 10, lowStockThreshold: 3, restockTarget: 10, autoRestock: true },
+  { id: 'patty', name: '肉饼', emoji: '🥩', color: '#8D6E63', calories: 250, cost: 5.0, stock: 10, maxStock: 10, lowStockThreshold: 3, restockTarget: 10, autoRestock: false },
+  { id: 'sauce', name: '酱料', emoji: '🧴', color: '#FFCC80', calories: 30, cost: 1.5, stock: 10, maxStock: 10, lowStockThreshold: 3, restockTarget: 10, autoRestock: true },
 ]
 
 export const RECIPES: Recipe[] = [
